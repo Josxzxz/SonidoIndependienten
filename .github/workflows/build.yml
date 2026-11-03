@@ -27,7 +27,10 @@ jobs:
       - name: Buscar el proyecto (ZIP o carpeta)
         id: proyecto
         run: |
-          ZIP=$(find . -maxdepth 2 -iname "*.zip" -not -path "./.git/*" | head -1)
+          ZIP="$GITHUB_WORKSPACE/SonidoIndependiente.zip"
+          if [ ! -f "$ZIP" ]; then
+          ZIP=$(find "$GITHUB_WORKSPACE" -type f -iname "*.zip" -not -path "*/.git/*" | head -1)
+          fi
           if [ -n "$ZIP" ]; then
             echo "ZIP encontrado: $ZIP"
             rm -rf /tmp/proyecto
