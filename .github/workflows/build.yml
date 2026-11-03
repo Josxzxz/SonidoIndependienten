@@ -5,7 +5,6 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-# Permisos explícitos para que el token pueda crear Releases y subir archivos
 permissions:
   contents: write
   actions: write
@@ -23,38 +22,42 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Buscar el proyecto (ZIP o carpeta)
+      - name: Buscar, descomprimir y ubicar el proyecto
         id: proyecto
         run: |
-          ZIP="$GITHUB_WORKSPACE/SonidoIndependiente.zip"
-          if [ ! -f "$ZIP" ]; then
-            ZIP=$(find "$GITHUB_WORKSPACE" -type f -iname "*.zip" -not -path "*/.git/*" | head -1)
-          fi
+          # 1. Buscar el ZIP (sin importar si tiene mayúsculas o minúsculas)
+          ZIP=$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -iname "*.zip" | head -1)
           
-          if [ -n "$ZIP" ]; then
-            echo "ZIP encontrado: $ZIP"
-            rm -rf /tmp/proyecto
-            mkdir -p /tmp/proyecto
-            unzip -q -o "$ZIP" -d /tmp/proyecto
-            for i in 1 2 3; do
-              find /tmp/proyecto -iname "*.zip" | while read -r Z; do
-                unzip -q -o "$Z" -d "$(dirname "$Z")" && rm -f "$Z"
-              done
-            done
-            BASE=/tmp/proyecto
-          else
-            echo "No hay ZIP, se compila el proyecto que está suelto en el repositorio"
-            BASE=$GITHUB_WORKSPACE
-          fi
-          
-          SETTINGS=$(find "$BASE" -maxdepth 4 -name "settings.gradle*" -not -path "*/build/*" | head -1)
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: no se encontró settings.gradle. Revisá que el ZIP tenga el proyecto de Android completo."
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No se encontró ningún archivo .zip en la raíz del repositorio."
             exit 1
           fi
           
+          echo "ZIP encontrado: $ZIP"
+          rm -rf /tmp/proyecto
+          mkdir -p /tmp/proyecto
+          
+          # 2. Descomprimir
+          unzip -q -o "$ZIP" -d /tmp/proyecto
+          
+          # 3. Descomprimir ZIPs anidados si los hubiera
+          find /tmp/proyecto -iname "*.zip" | while read -r Z; do
+            unzip -q -o "$Z" -d "$(dirname "$Z")" && rm -f "$Z"
+          done
+          
+          # 4. Buscar el settings.gradle SIN límite de profundidad (para atravesar la doble carpeta)
+          SETTINGS=$(find /tmp/proyecto -name "settings.gradle*" -not -path "*/build/*" | head -1)
+          
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR FATAL: No se encontró settings.gradle."
+            echo "--- CONTENIDO DEL ZIP DESCOMPRIMIDO ---"
+            ls -R /tmp/proyecto | head -n 50
+            exit 1
+          fi
+          
+          # 5. Obtener la ruta exacta donde está el proyecto
           DIR=$(dirname "$SETTINGS")
-          echo "Proyecto en: $DIR"
+          echo "Proyecto encontrado en: $DIR"
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
       - name: Configurar Java 17
@@ -71,11 +74,11 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      # Paso clave: Inyectar firma debug si no existe, para que assembleRelease no falle
-      - name: Configurar firma de respaldo (Bypass de firma)
+      # Bypass de firma por si el proyecto no tiene el keystore configurado
+      - name: Configurar firma de respaldo
         working-directory: ${{ steps.proyecto.outputs.dir }}
         run: |
-          if ! grep -q "signingConfigs" app/build.gradle; then
+          if [ -f "app/build.gradle" ] && ! grep -q "signingConfigs" app/build.gradle; then
             sed -i '/buildTypes {/,/}/ s/release {/release {\n            signingConfig signingConfigs.debug/' app/build.gradle
           fi
 
@@ -90,7 +93,7 @@ jobs:
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           
           if [ -z "$APK" ]; then
-            echo "ERROR: no se generó el APK. Revisa los logs de compilación."
+            echo "ERROR: no se generó el APK. Revisa los logs de compilación de Gradle."
             exit 1
           fi
           
@@ -101,7 +104,6 @@ jobs:
           
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "APK listo: SonidoIndependiente-v$VERSION.apk"
 
       - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
@@ -120,4 +122,4 @@ jobs:
             VersionCode: ${{ steps.apk.outputs.code }}
           files: salida/SonidoIndependiente-v${{ steps.apk.outputs.version }}.apk
           make_latest: true
-          token: ${{ secrets.GITHUB_TOKEN }} # Forzar el uso del token por defecto
+          token: ${{ secrets.GITHUB_TOKEN }}
