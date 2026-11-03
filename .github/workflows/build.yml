@@ -1,6 +1,6 @@
 name: Descomprimir y compilar APK
 
-# Se ejecuta solo cada vez que subís algo al repositorio,
+#Se ejecuta solo cada vez que subís algo al repositorio,
 # y también a mano desde la pestaña Actions (botón "Run workflow").
 on:
   push:
