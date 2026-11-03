@@ -25,7 +25,6 @@ jobs:
       - name: Buscar, descomprimir y ubicar el proyecto
         id: proyecto
         run: |
-          # 1. Buscar el ZIP (sin importar si tiene mayúsculas o minúsculas)
           ZIP=$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -iname "*.zip" | head -1)
           
           if [ -z "$ZIP" ]; then
@@ -36,26 +35,20 @@ jobs:
           echo "ZIP encontrado: $ZIP"
           rm -rf /tmp/proyecto
           mkdir -p /tmp/proyecto
-          
-          # 2. Descomprimir
           unzip -q -o "$ZIP" -d /tmp/proyecto
           
-          # 3. Descomprimir ZIPs anidados si los hubiera
           find /tmp/proyecto -iname "*.zip" | while read -r Z; do
             unzip -q -o "$Z" -d "$(dirname "$Z")" && rm -f "$Z"
           done
           
-          # 4. Buscar el settings.gradle SIN límite de profundidad (para atravesar la doble carpeta)
           SETTINGS=$(find /tmp/proyecto -name "settings.gradle*" -not -path "*/build/*" | head -1)
           
           if [ -z "$SETTINGS" ]; then
             echo "ERROR FATAL: No se encontró settings.gradle."
-            echo "--- CONTENIDO DEL ZIP DESCOMPRIMIDO ---"
             ls -R /tmp/proyecto | head -n 50
             exit 1
           fi
           
-          # 5. Obtener la ruta exacta donde está el proyecto
           DIR=$(dirname "$SETTINGS")
           echo "Proyecto encontrado en: $DIR"
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
@@ -66,15 +59,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # AQUÍ ESTÁ EL CAMBIO: v4 y packages: platform-tools
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Configurar Gradle 8.4
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.4'
 
-      # Bypass de firma por si el proyecto no tiene el keystore configurado
       - name: Configurar firma de respaldo
         working-directory: ${{ steps.proyecto.outputs.dir }}
         run: |
