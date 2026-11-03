@@ -5,8 +5,10 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+# Permisos explícitos para que el token pueda crear Releases y subir archivos
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: compilar-apk
@@ -69,11 +71,10 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      # NUEVO PASO: Forzar gradle a que no falle si no hay firma de release
+      # Paso clave: Inyectar firma debug si no existe, para que assembleRelease no falle
       - name: Configurar firma de respaldo (Bypass de firma)
         working-directory: ${{ steps.proyecto.outputs.dir }}
         run: |
-          # Si el build.gradle no tiene un signingConfig para release, le inyectamos uno debug
           if ! grep -q "signingConfigs" app/build.gradle; then
             sed -i '/buildTypes {/,/}/ s/release {/release {\n            signingConfig signingConfigs.debug/' app/build.gradle
           fi
@@ -86,7 +87,6 @@ jobs:
         id: apk
         working-directory: ${{ steps.proyecto.outputs.dir }}
         run: |
-          # Buscamos el APK generado
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           
           if [ -z "$APK" ]; then
@@ -120,3 +120,4 @@ jobs:
             VersionCode: ${{ steps.apk.outputs.code }}
           files: salida/SonidoIndependiente-v${{ steps.apk.outputs.version }}.apk
           make_latest: true
+          token: ${{ secrets.GITHUB_TOKEN }} # Forzar el uso del token por defecto
